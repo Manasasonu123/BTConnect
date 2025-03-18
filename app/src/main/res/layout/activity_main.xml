@@ -4,30 +4,84 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context="com.example.bluetoothconnect.MainActivity">
+
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/white"
+        android:theme="?attr/actionBarTheme"
+        app:popupTheme="@style/ThemeOverlay.AppCompat.Light"
+        android:elevation="4dp"
+        app:title="BTConnect">
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginEnd="36dp"
+            android:text="Status"
+            android:textSize="14sp"
+            android:textStyle="italic" />
+    </androidx.appcompat.widget.Toolbar>
+
+    <LinearLayout
+        android:id="@+id/linear1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="19dp"
+        android:gravity="center"
+        android:layout_below="@+id/toolbar">
+
     <Button
         android:id="@+id/listen"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="14dp"
-        android:layout_marginTop="19dp"
-        android:text="Listen"
+        android:text="Server"
         android:layout_alignParentTop="true"
-        android:layout_alignParentStart="true"/>
-
-    <ListView
-        android:id="@+id/listview"
-        android:layout_width="match_parent"
-        android:layout_height="300dp"
-        android:background="@android:color/darker_gray"
-        android:layout_below="@+id/listen"
         android:layout_alignParentStart="true"
-        android:layout_marginTop="31dp"/>
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/button_bg"
+        />
+
+    <Button
+        android:id="@+id/listDevices"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:text="List Devices"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/button_bg"/>
+        <Button
+            android:id="@+id/start"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerHorizontal="true"
+            android:text="Start"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/button_bg"/>
+    </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="500dp"
+        android:layout_below="@+id/linear1"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="162dp" />
 
     <TextView
         android:id="@+id/msg"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/listview"
+        android:layout_below="@+id/recyclerView"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="48dp"
         android:hint="Message"
@@ -43,34 +97,18 @@
         android:layout_marginBottom="14dp"
         android:ems="10"
         android:inputType="textPersonName"
-        android:layout_alignParentBottom="true"
-        android:layout_alignStart="@+id/listen"/>
+        android:layout_alignParentBottom="true" />
 
     <Button
         android:id="@+id/send"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Send"
         android:layout_alignTop="@+id/writemsg"
-        android:layout_alignEnd="@+id/status"/>
-
-    <Button
-        android:id="@+id/listDevices"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_above="@+id/listview"
-        android:layout_centerHorizontal="true"
-        android:text="List Devices"/>
-
-    <TextView
-        android:id="@+id/status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignBaseline="@+id/listDevices"
-        android:layout_alignBottom="@+id/listDevices"
+        android:layout_marginTop="4dp"
+        android:text="Send"
         android:layout_alignParentEnd="true"
-        android:layout_marginEnd="14dp"
-        android:text="Status"
-        android:textSize="14sp"
-        android:textStyle="italic"/>
+        android:layout_alignParentBottom="true"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="8dp"/>
+
 </RelativeLayout>
