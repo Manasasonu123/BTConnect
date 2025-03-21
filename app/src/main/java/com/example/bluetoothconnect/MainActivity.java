@@ -1,10 +1,13 @@
 package com.example.bluetoothconnect;
 
+import android.app.ActivityManager;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -26,13 +29,15 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
+import java.io.Serializable;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
 
 public class MainActivity extends AppCompatActivity {
-    Button listen, send, listDevice;
+    Button listen, send, listDevice,start;
     TextView msg_box, status;
     EditText writeMsg;
     private boolean listDevicesPending = false;
@@ -170,15 +175,39 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 if (sendReceive != null) {
-                    String string = String.valueOf(writeMsg.getText());
-                    sendReceive.write(string.getBytes());
-                    writeMsg.setText("");
+                    String string = writeMsg.getText().toString();
+                    if (!string.isEmpty()) {
+                        sendReceive.write(string.getBytes());
+                        writeMsg.setText("");
+                    } else {
+                        Toast.makeText(MainActivity.this, "Enter a message to send!", Toast.LENGTH_SHORT).show();
+                    }
                 } else {
                     Toast.makeText(MainActivity.this, "Not connected", Toast.LENGTH_SHORT).show();
                     Log.e("MainActivity", "sendReceive is null, connection not established.");
                 }
             }
         });
+
+        start.setOnClickListener(v -> {
+            if (sendReceive == null) {
+                Toast.makeText(MainActivity.this, "Not connected", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            for(int i=0;i<itemList.size();i++){
+                Intent serviceIntent=new Intent(MainActivity.this,BluetoothForegroundService.class);
+                serviceIntent.putExtra("currentList",(Serializable) itemList.get(i));
+                serviceIntent.putExtra("listIndex",i);
+                serviceIntent.putExtra("totalLists",itemList.size());
+                if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
+                    startForegroundService(serviceIntent);
+                }else{
+                    startService(serviceIntent);
+                }
+            }
+        });
+
+
     }
 
     private void showPairedDevicesDialog() {
@@ -251,5 +280,6 @@ public class MainActivity extends AppCompatActivity {
         status = findViewById(R.id.status);
         writeMsg = findViewById(R.id.writemsg);
         listDevice = findViewById(R.id.listDevices);
+        start=findViewById(R.id.start);
     }
 }
