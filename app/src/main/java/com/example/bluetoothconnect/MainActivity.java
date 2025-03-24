@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.Manifest;
+import android.os.Parcelable;
 import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
@@ -44,7 +45,7 @@ public class MainActivity extends AppCompatActivity {
 
     BluetoothAdapter bluetoothAdapter;
     BluetoothDevice[] btarray;
-    SendReceive sendReceive;
+    public static SendReceive sendReceive;
 
     static final int STATE_LISTENING = 1;
     static final int STATE_CONNECTING = 2;
@@ -65,8 +66,6 @@ public class MainActivity extends AppCompatActivity {
             Arrays.asList("8r", "5s", "3t", "5j", "9k"),
             Arrays.asList("19a", "23h", "34g", "58j", "61k")// Example of a second list
     );
-    private int currentListIndex = 0;
-    private int currentItemIndex = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -190,12 +189,13 @@ public class MainActivity extends AppCompatActivity {
         });
 
         start.setOnClickListener(v -> {
-            if (sendReceive == null) {
+            if (MainActivity.sendReceive == null) {
                 Toast.makeText(MainActivity.this, "Not connected", Toast.LENGTH_SHORT).show();
                 return;
             }
             for(int i=0;i<itemList.size();i++){
                 Intent serviceIntent=new Intent(MainActivity.this,BluetoothForegroundService.class);
+                serviceIntent.putExtra("itemList",(Serializable) itemList);
                 serviceIntent.putExtra("currentList",(Serializable) itemList.get(i));
                 serviceIntent.putExtra("listIndex",i);
                 serviceIntent.putExtra("totalLists",itemList.size());
@@ -255,8 +255,8 @@ public class MainActivity extends AppCompatActivity {
                     status.setText("Connected");
                     send.setEnabled(true);
                     if (msg.obj != null && msg.obj instanceof BluetoothSocket) { // Check if socket is passed
-                        sendReceive = new SendReceive((BluetoothSocket) msg.obj, handler); // Initialize sendReceive
-                        sendReceive.start();
+                        MainActivity.sendReceive = new SendReceive((BluetoothSocket) msg.obj, handler); // Initialize sendReceive
+                        MainActivity.sendReceive.start();
                     }
                     break;
                 case STATE_CONNECTION_FAILED:
@@ -281,5 +281,13 @@ public class MainActivity extends AppCompatActivity {
         writeMsg = findViewById(R.id.writemsg);
         listDevice = findViewById(R.id.listDevices);
         start=findViewById(R.id.start);
+    }
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (MainActivity.sendReceive != null) {
+            MainActivity.sendReceive.cancel();
+            MainActivity.sendReceive = null; // Reset the static variable
+        }
     }
 }

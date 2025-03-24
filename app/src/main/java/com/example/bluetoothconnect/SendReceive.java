@@ -2,6 +2,8 @@ package com.example.bluetoothconnect;
 
 import android.bluetooth.BluetoothSocket;
 import android.os.Handler;
+import android.os.Parcel;
+import android.os.Parcelable;
 import android.util.Log;
 
 import java.io.IOException;
@@ -10,21 +12,20 @@ import java.io.OutputStream;
 
 public class SendReceive extends Thread {
     private static final String TAG = "SendReceive";
-    private final BluetoothSocket bluetoothSocket;
+    private BluetoothSocket bluetoothSocket;
     private InputStream inputStream;
     private OutputStream outputStream;
-    private final Handler handler;
+    private Handler handler;
     private volatile boolean isRunning = true;
 
     public SendReceive(BluetoothSocket socket, Handler handler) {
         this.bluetoothSocket = socket;
         this.handler = handler;
         try {
-            inputStream = bluetoothSocket.getInputStream();
-            outputStream = bluetoothSocket.getOutputStream();
+            this.inputStream = socket.getInputStream();
+            this.outputStream = socket.getOutputStream();
         } catch (IOException e) {
             Log.e(TAG, "Error getting input or output stream", e);
-            cancel(); // Close socket and streams on error
         }
     }
 
@@ -33,20 +34,15 @@ public class SendReceive extends Thread {
         byte[] buffer = new byte[1024];
         int bytes;
 
-        if (inputStream == null) {
-            Log.e(TAG, "Input stream is null. Exiting thread.");
-            handler.obtainMessage(MainActivity.STATE_CONNECTION_FAILED).sendToTarget();
-            return;
-        }
-
         while (isRunning) {
             try {
                 bytes = inputStream.read(buffer);
+                if (bytes == -1) {
+                    Log.d(TAG, "InputStream returned -1, socket closed");
+                    break;
+                }
                 if (bytes > 0) {
                     handler.obtainMessage(MainActivity.STATE_MESSAGE_RECIEVED, bytes, -1, buffer).sendToTarget();
-                } else if (bytes == -1) {
-                    Log.d(TAG, "End of stream reached or socket closed.");
-                    break; // Exit loop when stream ends or socket is closed.
                 }
             } catch (IOException e) {
                 Log.e(TAG, "Error reading from input stream", e);
@@ -58,15 +54,13 @@ public class SendReceive extends Thread {
         cancel();
     }
 
-    public synchronized void write(byte[] bytes) {
-        if (outputStream == null) {
-            Log.e(TAG, "Output stream is null. Cannot write.");
-            return;
-        }
+    public void write(byte[] bytes) {
         try {
             outputStream.write(bytes);
         } catch (IOException e) {
-            Log.e(TAG, "Error writing to output stream", e);
+            Log.e(TAG, "Error writing to output stream: " + e.getMessage());
+            handler.obtainMessage(MainActivity.STATE_CONNECTION_FAILED).sendToTarget();
+            cancel();
         }
     }
 
@@ -81,3 +75,109 @@ public class SendReceive extends Thread {
         }
     }
 }
+
+
+//package com.example.bluetoothconnect;
+//
+//import android.bluetooth.BluetoothSocket;
+//import android.os.Handler;
+//import android.os.Looper;
+//import android.util.Log;
+//import java.io.IOException;
+//import java.io.InputStream;
+//import java.io.OutputStream;
+//
+//public class SendReceive extends Thread {
+//    private static final String TAG = "SendReceive";
+//    private static final String ACK_PREFIX = "ACK:";
+//    private BluetoothSocket bluetoothSocket;
+//    private InputStream inputStream;
+//    private OutputStream outputStream;
+//    private Handler handler;
+//    private BluetoothForegroundService service;
+//    private volatile boolean isRunning = true;
+//
+//    public SendReceive(BluetoothSocket socket, Handler handler, BluetoothForegroundService service) {
+//        this.bluetoothSocket = socket;
+//        this.handler = handler;
+//        this.service = service;
+//        try {
+//            this.inputStream = socket.getInputStream();
+//            this.outputStream = socket.getOutputStream();
+//        } catch (IOException e) {
+//            Log.e(TAG, "Error getting input or output stream", e);
+//        }
+//    }
+//
+//    @Override
+//    public void run() {
+//        byte[] buffer = new byte[1024];
+//        int bytes;
+//
+//        while (isRunning) {
+//            try {
+//                bytes = inputStream.read(buffer);
+//                if (bytes == -1) {
+//                    Log.d(TAG, "InputStream returned -1, socket closed");
+//                    break;
+//                }
+//                if (bytes > 0) {
+//                    String receivedMessage = new String(buffer, 0, bytes);
+//                    Log.d(TAG, "Received: " + receivedMessage);
+//
+//                    if (receivedMessage.startsWith(ACK_PREFIX)) {
+//                        // Handle acknowledgment
+//                        String ackItem = receivedMessage.substring(ACK_PREFIX.length());
+//                        new Handler(Looper.getMainLooper()).post(() -> {
+//                            if (service != null) {
+//                                service.onAcknowledgmentReceived(ackItem);
+//                            }
+//                        });
+//                    } else {
+//                        // Send acknowledgment back to sender
+//                        sendAcknowledgment(receivedMessage);
+//                        handler.obtainMessage(MainActivity.STATE_MESSAGE_RECIEVED, bytes, -1, buffer).sendToTarget();
+//                    }
+//                }
+//            } catch (IOException e) {
+//                Log.e(TAG, "Error reading from input stream", e);
+//                break;
+//            }
+//        }
+//
+//        handler.obtainMessage(MainActivity.STATE_CONNECTION_FAILED).sendToTarget();
+//        cancel();
+//    }
+//
+//    public void write(byte[] bytes) {
+//        try {
+//            outputStream.write(bytes);
+//            Log.d(TAG, "Sent: " + new String(bytes));
+//        } catch (IOException e) {
+//            Log.e(TAG, "Error writing to output stream: " + e.getMessage());
+//            handler.obtainMessage(MainActivity.STATE_CONNECTION_FAILED).sendToTarget();
+//            cancel();
+//        }
+//    }
+//
+//    private void sendAcknowledgment(String receivedItem) {
+//        try {
+//            String ackMessage = ACK_PREFIX + receivedItem;
+//            outputStream.write(ackMessage.getBytes());
+//            Log.d(TAG, "Sent acknowledgment: " + ackMessage);
+//        } catch (IOException e) {
+//            Log.e(TAG, "Error sending acknowledgment", e);
+//        }
+//    }
+//
+//    public void cancel() {
+//        isRunning = false;
+//        try {
+//            if (inputStream != null) inputStream.close();
+//            if (outputStream != null) outputStream.close();
+//            if (bluetoothSocket != null) bluetoothSocket.close();
+//        } catch (IOException e) {
+//            Log.e(TAG, "Error closing streams or socket", e);
+//        }
+//    }
+//}
