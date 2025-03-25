@@ -51,6 +51,8 @@ public class MainActivity extends AppCompatActivity {
     private SendReceive sendReceive;
     private BluetoothForegroundService bluetoothForegroundService;
     private boolean isBound = false;
+    private boolean isServiceStarted = false;
+    private boolean isConnected = false;
 
     static final int STATE_LISTENING = 1;
     static final int STATE_CONNECTING = 2;
@@ -72,19 +74,18 @@ public class MainActivity extends AppCompatActivity {
             Arrays.asList("19a", "23h", "34g", "58j", "61k")// Example of a second list
     );
 
-    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         findViewByIde();
         setupRecyclerView();
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-
         send.setEnabled(false);
 
+        // Check and request Bluetooth permissions
         if (!bluetoothAdapter.isEnabled()) {
             Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
                 requestBluetoothConnectPermission();
                 return;
             }
@@ -157,60 +158,52 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void implementListener() {
-        listDevice.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                    listDevicesPending = true; // Set the flag
-                    requestBluetoothConnectPermission();
-                    return;
-                }
-                showPairedDevicesDialog();
+        listDevice.setOnClickListener(view -> {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                listDevicesPending = true;
+                requestBluetoothConnectPermission();
+                return;
             }
+            showPairedDevicesDialog();
         });
-        listen.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Log.d("MainActivity", "Listen button clicked.");
-                checkBluetoothAdvertisePermission();
-            }
+
+        listen.setOnClickListener(view -> {
+            Log.d("MainActivity", "Listen button clicked.");
+            checkBluetoothAdvertisePermission();
         });
-        send.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if (sendReceive != null) {
-                    String string = writeMsg.getText().toString();
-                    if (!string.isEmpty()) {
-                        sendReceive.write(string.getBytes());
-                        writeMsg.setText("");
-                    } else {
-                        Toast.makeText(MainActivity.this, "Enter a message to send!", Toast.LENGTH_SHORT).show();
-                    }
+
+        send.setOnClickListener(view -> {
+            if (sendReceive != null && sendReceive.isRunning()) {
+                String string = writeMsg.getText().toString();
+                if (!string.isEmpty()) {
+                    sendReceive.write(string.getBytes());
+                    writeMsg.setText("");
                 } else {
-                    Toast.makeText(MainActivity.this, "Not connected", Toast.LENGTH_SHORT).show();
-                    Log.e("MainActivity", "sendReceive is null, connection not established.");
+                    Toast.makeText(this, "Enter a message to send!", Toast.LENGTH_SHORT).show();
                 }
+            } else {
+                Toast.makeText(this, "Not connected or connection lost", Toast.LENGTH_SHORT).show();
             }
         });
 
         start.setOnClickListener(v -> {
-            if (sendReceive == null) {
-                Toast.makeText(MainActivity.this, "Not connected", Toast.LENGTH_SHORT).show();
+            if (!isConnected) {
+                Toast.makeText(this, "Please connect to a device first", Toast.LENGTH_SHORT).show();
                 return;
             }
-            for(int i=0;i<itemList.size();i++){
-                Intent serviceIntent=new Intent(MainActivity.this,BluetoothForegroundService.class);
-                serviceIntent.putExtra("itemList",(Serializable) itemList);
-                bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE);
-                if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
-                    startForegroundService(serviceIntent);
-                }else{
-                    startService(serviceIntent);
-                }
+
+            if (sendReceive == null || !sendReceive.isRunning()) {
+                Toast.makeText(this, "Connection not established", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (!isServiceStarted) {
+                startBluetoothService();
+                isServiceStarted = true;
+            } else {
+                Toast.makeText(this, "Service already running", Toast.LENGTH_SHORT).show();
             }
         });
-
-
     }
 
     private void showPairedDevicesDialog() {
@@ -243,19 +236,27 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "No paired devices found.", Toast.LENGTH_SHORT).show();
         }
     }
+
     public void setSendReceive(SendReceive sendReceive) {
         this.sendReceive = sendReceive;
+        // Update service if already bound
+        if (isBound && bluetoothForegroundService != null) {
+            bluetoothForegroundService.setSendReceive(sendReceive);
+        }
     }
 
-    private ServiceConnection serviceConnection = new ServiceConnection() {
+    private final ServiceConnection serviceConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             BluetoothForegroundService.LocalBinder binder = (BluetoothForegroundService.LocalBinder) service;
             bluetoothForegroundService = binder.getService();
             isBound = true;
-            // Connect the SendReceive instance to the service
+
+            // Pass the SendReceive instance to service
             if (sendReceive != null) {
                 bluetoothForegroundService.setSendReceive(sendReceive);
+            } else {
+                Log.e("MainActivity", "Service connected but SendReceive is null");
             }
         }
 
@@ -273,30 +274,82 @@ public class MainActivity extends AppCompatActivity {
                 case STATE_LISTENING:
                     status.setText("Listening");
                     break;
+
                 case STATE_CONNECTING:
                     status.setText("Connecting");
+                    handler.postDelayed(() -> {
+                        if (status.getText().equals("Connecting")) {
+                            status.setText("Connection timeout");
+                            handler.obtainMessage(STATE_CONNECTION_FAILED).sendToTarget();
+                        }
+                    }, 15000); // 15 second timeout
                     break;
+
                 case STATE_CONNECTED:
                     status.setText("Connected");
                     send.setEnabled(true);
-                    if (msg.obj != null && msg.obj instanceof BluetoothSocket) { // Check if socket is passed
-                        sendReceive = new SendReceive((BluetoothSocket) msg.obj, handler,bluetoothForegroundService); // Initialize sendReceive
+                    isConnected = true; // Mark as connected
+
+                    if (msg.obj != null && msg.obj instanceof BluetoothSocket) {
+                        // Initialize SendReceive
+                        sendReceive = new SendReceive((BluetoothSocket) msg.obj, handler);
                         sendReceive.start();
+
+                        // Don't start service here - wait for start button click
+                        Toast.makeText(MainActivity.this,
+                                "Connected! Click Start to begin transmission",
+                                Toast.LENGTH_SHORT).show();
                     }
                     break;
+
                 case STATE_CONNECTION_FAILED:
                     status.setText("Connection failed");
+                    if (sendReceive != null) {
+                        sendReceive.cancel();
+                        sendReceive = null;
+                    }
                     break;
+
                 case STATE_MESSAGE_RECIEVED:
                     byte[] readBuff = (byte[]) msg.obj;
                     String tempMsg = new String(readBuff, 0, msg.arg1);
                     msg_box.setText(tempMsg);
-
                     break;
             }
             return true;
         }
     });
+    private void startBluetoothService() {
+        Intent serviceIntent = new Intent(this, BluetoothForegroundService.class);
+        serviceIntent.putExtra("itemList", (Serializable) itemList);
+
+        // Bind service first
+        bindService(serviceIntent, new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder service) {
+                BluetoothForegroundService.LocalBinder binder =
+                        (BluetoothForegroundService.LocalBinder) service;
+                bluetoothForegroundService = binder.getService();
+
+                // Now that service is bound, pass SendReceive if it exists
+                if (sendReceive != null) {
+                    bluetoothForegroundService.setSendReceive(sendReceive);
+                }
+            }
+
+            @Override
+            public void onServiceDisconnected(ComponentName name) {
+                bluetoothForegroundService = null;
+            }
+        }, Context.BIND_AUTO_CREATE);
+
+        // Then start service
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
+    }
 
     private void findViewByIde() {
         listen = findViewById(R.id.listen);

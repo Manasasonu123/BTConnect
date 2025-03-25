@@ -324,6 +324,7 @@ import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 import java.util.List;
 
@@ -332,17 +333,21 @@ public class BluetoothForegroundService extends Service {
     private static final String CHANNEL_ID = "BluetoothForegroundServiceChannel";
     private static final int NOTIFICATION_ID = 1;
     private static final long DELAY_BETWEEN_ITEMS = 2000; // 2 seconds
-    private static final long DELAY_BETWEEN_LISTS = 3000; // 3 seconds
+    private static final long DELAY_BETWEEN_LISTS = 10000; // 3 seconds
     private static final String ACK_PREFIX = "ACK:";
 
-    private NotificationManager notificationManager;
+    private boolean isConnected = false;
+    private boolean waitingForAck = false;
+
     private List<List<String>> itemList;
     private int listIndex = 0;
     private int itemIndex = 0;
     private int totalLists = 0;
     private int totalItemsToSend = 0;
     private int acknowledgedItems = 0;
-    private boolean waitingForAck = false;
+    private int currentListAcknowledged=0;
+
+    private NotificationManager notificationManager;
     private Handler handler;
     private SendReceive sendReceive;
 
@@ -369,108 +374,172 @@ public class BluetoothForegroundService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null) {
-            itemList = (List<List<String>>) intent.getSerializableExtra("itemList");
-            listIndex = 0;
-            itemIndex = 0;
-            acknowledgedItems = 0;
-            totalLists = itemList != null ? itemList.size() : 0;
+            // Initialize notification first to prevent ANR
+            Notification notification = createNotification("Initializing transfer...", 0, 0, false);
+            startForeground(NOTIFICATION_ID, notification);
 
-            if (itemList == null || totalLists == 0) {
+            // Initialize data
+            itemList = (List<List<String>>) intent.getSerializableExtra("itemList");
+            resetCounters();
+
+            if (itemList == null || itemList.isEmpty()) {
                 stopSelf();
                 return START_NOT_STICKY;
             }
 
-            totalItemsToSend = 0;
-            for (List<String> list : itemList) {
-                totalItemsToSend += list.size();
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForeground(NOTIFICATION_ID,
-                        createNotification("Starting transmission", 0));
-            }
-
-            sendNextItem();
+            calculateTotalItems();
+            updateNotification("Waiting for connection...", 0, 0, false);
         }
         return START_STICKY;
     }
+    private void resetCounters() {
+        listIndex = 0;
+        itemIndex = 0;
+        acknowledgedItems = 0;
+        currentListAcknowledged = 0;
+        totalLists = itemList != null ? itemList.size() : 0;
+    }
+
+    private void calculateTotalItems() {
+        totalItemsToSend = 0;
+        for (List<String> list : itemList) {
+            totalItemsToSend += list.size();
+        }
+    }
 
     private void sendNextItem() {
+        handler.removeCallbacksAndMessages(null); // Clear previous timeouts
+
+        if (!isConnected || sendReceive == null || !sendReceive.isRunning()) {
+            Log.w(TAG, "Connection not ready - retrying");
+            handler.postDelayed(this::sendNextItem, 2000);
+            return;
+        }
+
         if (listIndex >= totalLists) {
-            updateNotification("Transmission complete", 100);
-            handler.postDelayed(this::stopSelf, DELAY_BETWEEN_ITEMS);
+            handleTransmissionComplete();
             return;
         }
 
         List<String> currentList = itemList.get(listIndex);
-
         if (itemIndex < currentList.size() && !waitingForAck) {
-            String item = currentList.get(itemIndex);
-            Log.d(TAG, "Sending item: " + item + " from list " + (listIndex + 1));
+            sendCurrentItem(currentList);
+        } else {
+            handleListTransition(currentList);
+        }
+    }
+    private void sendCurrentItem(List<String> currentList) {
+        String item = currentList.get(itemIndex);
+        Log.d(TAG, "Sending: " + item);
 
-            if (sendReceive != null) {
-                sendReceive.write(item.getBytes());
-            }
-
+        try {
+            sendReceive.write(item.getBytes());
             waitingForAck = true;
-            updateNotification("Sent: " + item + " (Waiting for ack)",
-                    (int)((float)acknowledgedItems / totalItemsToSend * 100));
 
-            handler.postDelayed(() -> {
-                if (waitingForAck) {
-                    Log.w(TAG, "Timeout waiting for ack for item: " + item);
-                    waitingForAck = false;
-                    itemIndex++;
-                    sendNextItem();
-                }
-            }, DELAY_BETWEEN_ITEMS);
-        } else if (itemIndex >= currentList.size() && listIndex < totalLists - 1) {
-            listIndex++;
-            itemIndex = 0;
-            waitingForAck = false;
-            updateNotification("Starting list " + (listIndex + 1),
-                    (int)((float)acknowledgedItems / totalItemsToSend * 100));
-            handler.postDelayed(this::sendNextItem, DELAY_BETWEEN_LISTS);
-        } else if (listIndex >= totalLists - 1 && itemIndex >= currentList.size()) {
-            updateNotification("Transmission complete", 100);
-            handler.postDelayed(this::stopSelf, DELAY_BETWEEN_ITEMS);
+            updateNotificationProgress(currentList, item);
+            setupAckTimeout(item);
+        } catch (Exception e) {
+            Log.e(TAG, "Send failed: " + e.getMessage());
+            handler.postDelayed(this::sendNextItem, 2000);
         }
     }
 
-    // In BluetoothForegroundService.java
-    public void onAcknowledgmentReceived(String ackItem) {
-        Log.d(TAG, "Acknowledgment received for item: " + ackItem);
+    private void updateNotificationProgress(List<String> currentList, String item) {
+        int overallProgress = (int)((float)acknowledgedItems / totalItemsToSend * 100);
+        int listProgress = (int)((float)currentListAcknowledged / currentList.size() * 100);
+        updateNotification("⬆️ Sending: " + item, overallProgress, listProgress, false);
+    }
+
+    private void setupAckTimeout(String item) {
+        handler.postDelayed(() -> {
+            if (waitingForAck) {
+                Log.w(TAG, "Timeout for: " + item);
+                waitingForAck = false;
+                itemIndex++;
+                sendNextItem();
+            }
+        }, DELAY_BETWEEN_ITEMS);
+    }
+
+    private void handleListTransition(List<String> currentList) {
+        if (itemIndex >= currentList.size() && listIndex < totalLists - 1) {
+            transitionToNextList();
+        } else {
+            handleTransmissionComplete();
+        }
+    }
+
+    private void transitionToNextList() {
+        listIndex++;
+        itemIndex = 0;
+        currentListAcknowledged = 0;
         waitingForAck = false;
+
+        int overallProgress = (int)((float)acknowledgedItems / totalItemsToSend * 100);
+        updateNotification("➡️ Starting list " + (listIndex + 1),
+                overallProgress, 0, false);
+
+        handler.postDelayed(this::sendNextItem, DELAY_BETWEEN_LISTS);
+    }
+
+    private void handleTransmissionComplete() {
+        updateNotification("✅ Transmission complete", 100, 100, true);
+        handler.postDelayed(this::stopSelf, DELAY_BETWEEN_ITEMS);
+    }
+
+    public void onAcknowledgmentReceived(String ackItem) {
+        handler.removeCallbacksAndMessages(null); // Cancel timeout
+        waitingForAck = false;
+
         acknowledgedItems++;
+        currentListAcknowledged++;
 
-        int progress = (int)((float)acknowledgedItems / totalItemsToSend * 100);
-        Log.d(TAG, "Progress: " + progress + "%");
-        updateNotification("Ack received: " + ackItem, progress);
-
+        updateAckNotification(ackItem);
         itemIndex++;
         sendNextItem();
     }
 
-    private void updateNotification(String message, int progress) {
+    private void updateAckNotification(String ackItem) {
+        List<String> currentList = itemList.get(listIndex);
+        int overallProgress = (int)((float)acknowledgedItems / totalItemsToSend * 100);
+        int listProgress = (int)((float)currentListAcknowledged / currentList.size() * 100);
+        updateNotification("✅ Ack: " + ackItem, overallProgress, listProgress, true);
+    }
+
+
+
+    private void updateNotification(String message, int overallProgress, int listProgress, boolean isAck) {
         if (notificationManager != null) {
-            Notification notification = createNotification(message, progress);
+            Notification notification = createNotification(message, overallProgress, listProgress, isAck);
             notificationManager.notify(NOTIFICATION_ID, notification);
         }
     }
 
-    private Notification createNotification(String message, int progress) {
+    private Notification createNotification(String message, int overallProgress, int listProgress, boolean isAck) {
         Intent notificationIntent = new Intent(this, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0,
                 notificationIntent, PendingIntent.FLAG_IMMUTABLE);
 
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Bluetooth Transfer - Progress: " + progress + "%")
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("Bluetooth Transfer")
                 .setContentText(message)
                 .setSmallIcon(R.drawable.baseline_notifications_24)
                 .setContentIntent(pendingIntent)
-                .setProgress(100, progress, false)
-                .setOnlyAlertOnce(true)
-                .build();
+                .setOnlyAlertOnce(true);
+
+        // Add progress bars
+        builder.setProgress(100, overallProgress, false)
+                .setStyle(new NotificationCompat.BigTextStyle()
+                        .bigText(message + "\n\nOverall: " + overallProgress + "%" +
+                                "\nCurrent List: " + listProgress + "%"));
+
+        // Visual distinction for acknowledgments
+        if (isAck) {
+            builder.setColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
+                    .setColorized(true);
+        }
+
+        return builder.build();
     }
 
     private void createNotificationChannel() {
@@ -486,11 +555,22 @@ public class BluetoothForegroundService extends Service {
     }
     public void setSendReceive(SendReceive sendReceive) {
         this.sendReceive = sendReceive;
+        this.isConnected = (sendReceive != null && sendReceive.isRunning());
+
+        if (isConnected && itemList != null) {
+            sendNextItem();
+        }
     }
+
+
 
     @Override
     public void onDestroy() {
         super.onDestroy();
         handler.removeCallbacksAndMessages(null);
+        if (sendReceive != null) {
+            sendReceive.cancel();
+        }
+        stopForeground(true);
     }
 }

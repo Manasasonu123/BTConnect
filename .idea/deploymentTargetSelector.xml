@@ -3,17 +3,24 @@
   <component name="deploymentTargetSelector">
     <selectionStates>
       <SelectionState runConfigName="app">
-        <option name="selectionMode" value="DIALOG" />
+        <option name="selectionMode" value="DROPDOWN" />
+        <DropdownSelection timestamp="2025-03-25T11:33:22.815700285Z">
+          <Target type="DEFAULT_BOOT">
+            <handle>
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=R9ZW208ALWW" />
+            </handle>
+          </Target>
+        </DropdownSelection>
         <DialogSelection>
           <targets>
             <Target type="DEFAULT_BOOT">
               <handle>
-                <DeviceId pluginId="PhysicalDevice" identifier="serial=3083909415000A7" />
+                <DeviceId pluginId="PhysicalDevice" identifier="serial=R9ZW208ALWW" />
               </handle>
             </Target>
             <Target type="DEFAULT_BOOT">
               <handle>
-                <DeviceId pluginId="PhysicalDevice" identifier="serial=R9ZW208ALWW" />
+                <DeviceId pluginId="PhysicalDevice" identifier="serial=3083909415000A7" />
               </handle>
             </Target>
           </targets>
