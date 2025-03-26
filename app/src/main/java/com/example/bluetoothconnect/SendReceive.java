@@ -177,10 +177,12 @@ public class SendReceive extends Thread {
         cleanup();
     }
 
+
     private void processReceivedData(byte[] buffer, int bytes) throws IOException {
         String receivedMessage = new String(buffer, 0, bytes).trim();
-        Log.d(TAG, "Received: " + receivedMessage);
+        Log.d(TAG, "Received-----> SendReceive: " + receivedMessage);
 
+        // Prevent infinite acknowledgment loop
         if (receivedMessage.startsWith(ACK_PREFIX)) {
             handleAcknowledgment(receivedMessage);
         } else {
@@ -189,16 +191,48 @@ public class SendReceive extends Thread {
         }
     }
 
-    private void handleAcknowledgment(String ackMessage) {
-        String ackItem = ackMessage.substring(ACK_PREFIX.length());
-        Log.d(TAG, "Processing ACK: " + ackItem);
 
-        if (service != null) {
-            new Handler(Looper.getMainLooper()).post(() -> {
-                service.onAcknowledgmentReceived(ackItem);
-            });
-        }
+//    private void handleAcknowledgment(String ackMessage) {
+//        if (!ackMessage.startsWith(ACK_PREFIX)) return;  // Ensure it's a valid ACK
+//
+//        String ackItem = ackMessage.substring(ACK_PREFIX.length()).trim(); // Trim unwanted spaces
+//        Log.d(TAG, "Processing ACK: " + ackItem);
+//
+//        if (service != null) {
+//            new Handler(Looper.getMainLooper()).post(() -> {
+//                service.onAcknowledgmentReceived(ackItem);
+//            });
+//        }
+//    }
+private void handleAcknowledgment(String ackMessage) {
+    if (!ackMessage.startsWith(ACK_PREFIX)) {
+        Log.e(TAG, "Invalid ACK received: " + ackMessage);
+        return;
     }
+
+    String ackItem = ackMessage.substring(ACK_PREFIX.length()).trim();
+    Log.d(TAG, "Processing ACK: " + ackItem);
+
+    if (service == null) {
+        Log.e(TAG, "Service is null, ACK not processed.");
+        return;
+    }
+
+    String lastSent = service.getLastSentItem();
+    Log.d(TAG, "Last sent item: " + lastSent);
+    Log.d(TAG, "Comparing ACK item: " + ackItem);
+
+    if (lastSent.equals(ackItem)) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            Log.d(TAG, "Calling onAcknowledgmentReceived for: " + ackItem);
+            service.onAcknowledgmentReceived(ackItem);
+        });
+    } else {
+        Log.e(TAG, "ACK item does not match last sent item.");
+    }
+}
+
+
 
     private void forwardMessageToUi(byte[] buffer, int bytes) {
         handler.obtainMessage(
@@ -231,12 +265,20 @@ public class SendReceive extends Thread {
 
     private void sendAcknowledgment(String receivedItem) throws IOException {
         String ackMessage = ACK_PREFIX + receivedItem;
+
+        // Prevent re-acknowledging an acknowledgment
+        if (receivedItem.startsWith(ACK_PREFIX)) {
+            Log.d(TAG, "Skipping ACK for an ACK message: " + receivedItem);
+            return;
+        }
+
         synchronized (writeLock) {
             outputStream.write(ackMessage.getBytes());
             outputStream.flush();
             Log.d(TAG, "Sent ACK: " + ackMessage);
         }
     }
+
 
     public void cancel() {
         stopRunning();
