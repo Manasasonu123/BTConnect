@@ -118,7 +118,6 @@ import androidx.core.content.ContextCompat;
 import java.io.IOException;
 import java.util.UUID;
 
-import static com.example.bluetoothconnect.MainActivity.STATE_CONNECTED;
 import static com.example.bluetoothconnect.MainActivity.STATE_CONNECTION_FAILED;
 import static com.example.bluetoothconnect.MainActivity.STATE_CONNECTING;
 
@@ -198,7 +197,7 @@ public class ServerClass extends Thread {
 
                 // Initialize SendReceive with all required parameters
                 if (context instanceof MainActivity && service != null) {
-                    SendReceive sendReceive = new SendReceive(socket, handler, service);
+                    SendReceive sendReceive = new SendReceive(socket, handler, context, service);
                     sendReceive.start();
 
                     // Set the SendReceive instance in MainActivity

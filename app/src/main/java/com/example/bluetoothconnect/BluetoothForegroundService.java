@@ -393,6 +393,7 @@ public class BluetoothForegroundService extends Service {
 
             calculateTotalItems();
             updateNotification("Waiting for connection...", 0, 0, false);
+            Log.d(TAG, "Service started with " + (itemList != null ? itemList.size() : 0) + " lists");
         }
         return START_STICKY;
     }
@@ -435,6 +436,9 @@ public class BluetoothForegroundService extends Service {
         } else {
             handleListTransition(currentList);
         }
+        Log.d(TAG, "sendNextItem - isConnected: " + isConnected +
+                ", sendReceive: " + (sendReceive != null) +
+                ", isRunning: " + (sendReceive != null ? sendReceive.isRunning() : false));
     }
 //    private void sendCurrentItem(List<String> currentList) {
 //        String item = currentList.get(itemIndex);
@@ -650,10 +654,19 @@ private void updateAckNotification(String ackItem) {
     }
     public void setSendReceive(SendReceive sendReceive) {
         this.sendReceive = sendReceive;
+        boolean wasConnected = this.isConnected;
         this.isConnected = (sendReceive != null && sendReceive.isRunning());
 
-        if (isConnected && itemList != null) {
-            sendNextItem();
+        Log.d(TAG, "Connection state - Old: " + wasConnected + " New: " + isConnected);
+
+        if (this.isConnected) {
+            if (!wasConnected) { // Only start if this is a NEW connection
+                Log.d(TAG, "New connection established, starting transmission");
+                sendNextItem();
+            }
+        } else {
+            Log.w(TAG, "Invalid connection state in setSendReceive");
+            updateNotification("Connection lost", 0, 0, false);
         }
     }
 

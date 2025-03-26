@@ -80,6 +80,9 @@
 package com.example.bluetoothconnect;
 
 import android.bluetooth.BluetoothSocket;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -97,6 +100,7 @@ public class SendReceive extends Thread {
     private final InputStream inputStream;
     private final OutputStream outputStream;
     private final Handler handler;
+    private final Context context;
 
     // Service reference with volatile for visibility
     private volatile BluetoothForegroundService service;
@@ -105,13 +109,14 @@ public class SendReceive extends Thread {
     private volatile boolean isRunning = true;
     private final Object writeLock = new Object(); // Separate lock for write operations
 
-    public SendReceive(BluetoothSocket socket, Handler handler) {
-        this(socket, handler, null);
+    public SendReceive(BluetoothSocket socket, Handler handler, Context context) {
+        this(socket, handler, context, null);
     }
 
-    public SendReceive(BluetoothSocket socket, Handler handler, BluetoothForegroundService service) {
+    public SendReceive(BluetoothSocket socket, Handler handler, Context context, BluetoothForegroundService service) {
         this.bluetoothSocket = socket;
         this.handler = handler;
+        this.context=context;
         this.service = service;
 
         // Initialize streams in constructor
@@ -144,7 +149,9 @@ public class SendReceive extends Thread {
     public boolean isRunning() {
         return isRunning &&
                 bluetoothSocket != null &&
-                bluetoothSocket.isConnected();
+                bluetoothSocket.isConnected() &&
+                inputStream != null &&
+                outputStream != null;
     }
 
     @Override
@@ -179,15 +186,26 @@ public class SendReceive extends Thread {
 
 
     private void processReceivedData(byte[] buffer, int bytes) throws IOException {
-        String receivedMessage = new String(buffer, 0, bytes).trim();
-        Log.d(TAG, "Received-----> SendReceive: " + receivedMessage);
-
-        // Prevent infinite acknowledgment loop
-        if (receivedMessage.startsWith(ACK_PREFIX)) {
-            handleAcknowledgment(receivedMessage);
+        if(service == null) { // Use 'service' instead of 'bluetoothForegroundService'
+            Log.e(TAG, "BluetoothForegroundService is null! Restarting...");
+            Intent serviceIntent = new Intent(context, BluetoothForegroundService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent); // API 26+
+            } else {
+                context.startService(serviceIntent); // Below API 26
+            }
         } else {
-            sendAcknowledgment(receivedMessage);
-            forwardMessageToUi(buffer, bytes);
+            // Process ACK normally
+            String receivedMessage = new String(buffer, 0, bytes).trim();
+            Log.d(TAG, "Received-----> SendReceive: " + receivedMessage);
+
+            // Prevent infinite acknowledgment loop
+            if (receivedMessage.startsWith(ACK_PREFIX)) {
+                handleAcknowledgment(receivedMessage);
+            } else {
+                sendAcknowledgment(receivedMessage);
+                forwardMessageToUi(buffer, bytes);
+            }
         }
     }
 
