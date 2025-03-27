@@ -44,9 +44,8 @@ import java.util.Set;
 
 
 public class MainActivity extends AppCompatActivity {
-    Button listen, send, listDevice,start;
+    Button listen, listDevice,start;
     TextView msg_box, status;
-    EditText writeMsg;
     private boolean listDevicesPending = false;
 
     BluetoothAdapter bluetoothAdapter;
@@ -72,9 +71,11 @@ public class MainActivity extends AppCompatActivity {
     private RecyclerViewAdapter recyclerViewAdapter;
     private List<List<String>> itemList = Arrays.asList(
             Arrays.asList("1a", "2n", "3g", "5j", "6k"),
-            Arrays.asList("7l", "8m", "9o", "10p", "11q"),
-            Arrays.asList("8r", "5s", "3t", "5j", "9k"),
-            Arrays.asList("19a", "23h", "34g", "58j", "61k")// Example of a second list
+            Arrays.asList("7l", "8m", "9o"),
+            Arrays.asList("8r", "5s", "3t", "5j"),
+            Arrays.asList("19a", "23h", "34g", "58j", "61k","10p", "11q"),
+            Arrays.asList("5a"),// "34n", "38g", "51j", "68d"
+            Arrays.asList("79l", "87g", "9s", "10z", "16b")// Example of a second list
     );
 
     private final ServiceConnection serviceConnection = new ServiceConnection() {
@@ -120,7 +121,7 @@ public class MainActivity extends AppCompatActivity {
         findViewByIde();
         setupRecyclerView();
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-        send.setEnabled(false);
+        start.setEnabled(false);
 
         // Check and request Bluetooth permissions
         if (!bluetoothAdapter.isEnabled()) {
@@ -212,20 +213,6 @@ public class MainActivity extends AppCompatActivity {
             checkBluetoothAdvertisePermission();
         });
 
-        send.setOnClickListener(view -> {
-            if (sendReceive != null && sendReceive.isRunning()) {
-                String string = writeMsg.getText().toString();
-                if (!string.isEmpty()) {
-                    sendReceive.write(string.getBytes());
-                    writeMsg.setText("");
-                } else {
-                    Toast.makeText(this, "Enter a message to send!", Toast.LENGTH_SHORT).show();
-                }
-            } else {
-                Toast.makeText(this, "Not connected or connection lost", Toast.LENGTH_SHORT).show();
-            }
-        });
-
         start.setOnClickListener(v -> {
             if (!isConnected) {
                 Toast.makeText(this, "Please connect to a device first", Toast.LENGTH_SHORT).show();
@@ -310,7 +297,7 @@ public class MainActivity extends AppCompatActivity {
 
                 case STATE_CONNECTED:
                     status.setText("Connected");
-                    send.setEnabled(true);
+                    start.setEnabled(true);
                     isConnected = true;
 
                     if (msg.obj != null && msg.obj instanceof BluetoothSocket) {
@@ -368,10 +355,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void findViewByIde() {
         listen = findViewById(R.id.listen);
-        send = findViewById(R.id.send);
         msg_box = findViewById(R.id.msg);
         status = findViewById(R.id.status);
-        writeMsg = findViewById(R.id.writemsg);
         listDevice = findViewById(R.id.listDevices);
         start=findViewById(R.id.start);
     }

@@ -83,32 +83,11 @@
         android:layout_height="wrap_content"
         android:layout_below="@+id/recyclerView"
         android:layout_centerHorizontal="true"
-        android:layout_marginTop="48dp"
         android:hint="Message"
         android:textAlignment="center"
         android:textColor="?android:attr/textColorLink"
         android:textSize="30sp"
         android:textStyle="italic"/>
 
-    <EditText
-        android:id="@+id/writemsg"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="14dp"
-        android:ems="10"
-        android:inputType="textPersonName"
-        android:layout_alignParentBottom="true" />
-
-    <Button
-        android:id="@+id/send"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignTop="@+id/writemsg"
-        android:layout_marginTop="4dp"
-        android:text="Send"
-        android:layout_alignParentEnd="true"
-        android:layout_alignParentBottom="true"
-        android:layout_marginEnd="8dp"
-        android:layout_marginBottom="8dp"/>
 
 </RelativeLayout>
